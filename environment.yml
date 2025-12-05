@@ -1,0 +1,24 @@
+name: tesi_CRN_env
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.12
+  - numpy
+  - pytorch
+  - torchaudio
+  - pytorch-cuda
+  - pytorch-model-summary
+  - 'ffmpeg<8' 
+  - matplotlib
+  - libffi
+  - torchmetrics
+  - pesq
+  - pystoi
+  - pip
+
+  - pip:
+      - torchcodec==0.8

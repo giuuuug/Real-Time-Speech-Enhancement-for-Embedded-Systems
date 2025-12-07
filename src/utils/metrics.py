@@ -93,27 +93,7 @@ def reset_metrics(metrics: dict) -> None:
         metric.reset()
 
 
-def print_metrics(results: dict, epoch: int, prefix: str = "") -> None:
-    """
-    Stampa le metriche in formato leggibile.
-
-    Args:
-        results: Dict con valori PESQ, STOI, SI-SDR
-        epoch: Numero dell'epoca corrente
-        prefix: Prefisso opzionale (es. "Enhanced" o "Noisy")
-    """
-    prefix_str = f"[{prefix}] " if prefix else ""
-
-    print(f"\n{'='*60}")
-    print(f"📊 METRICHE EPOCH {epoch} {prefix_str}")
-    print(f"{'='*60}")
-    print(f"  PESQ   : {results.get('pesq', float('nan')):>8.4f}  (range: -0.5 → 4.5, più alto = meglio)")
-    print(f"  STOI   : {results.get('stoi', float('nan')):>8.4f}  (range: 0 → 1, più alto = meglio)")
-    print(f"  SI-SDR : {results.get('si_sdr', float('nan')):>8.2f} dB  (più alto = meglio)")
-    print(f"{'='*60}\n")
-
-
-def print_metrics_comparison(noisy_results: dict, enhanced_results: dict, epoch: int) -> None:
+def print_metrics_comparison(train_loss, eval_loss, noisy_results: dict, enhanced_results: dict, epoch: int) -> None:
     """
     Stampa confronto tra metriche noisy e enhanced.
 
@@ -127,6 +107,12 @@ def print_metrics_comparison(noisy_results: dict, enhanced_results: dict, epoch:
         delta = enhanced - noisy
         sign = "+" if delta >= 0 else ""
         return f"{sign}{delta:.4f}"
+    
+
+    print(f"\nEpoch {epoch}:")
+    print(f"  📉 Train Loss: {train_loss:.5f}")
+    print(f"  📉 Eval Loss:  {eval_loss:.5f}")
+
 
     print(f"\n{'='*70}")
     print(f"📊 METRICHE EPOCH {epoch}")

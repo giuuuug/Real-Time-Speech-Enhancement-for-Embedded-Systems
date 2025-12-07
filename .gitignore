@@ -3,5 +3,4 @@ __pycache__/
 dataset/
 checkpoints/
 test_audio/
-metrics/
 inference/

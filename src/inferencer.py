@@ -5,59 +5,54 @@ from pathlib import Path
 import torch
 import torchaudio
 
-from model.crn import CRN
-from utils.torch import get_torch_device
+from src.model.crn import CRN
+from src.utils.torch import get_torch_device
 
-# --- CONFIGURAZIONE (deve corrispondere a trainer.py) ---
+# --- CONFIGURAZIONE ---
 N_FFT = 320
 HOP_LENGTH = 160
 WIN_LENGTH = 320
 SAMPLE_RATE = 16000
 DEVICE = get_torch_device()
+
 CHECKPOINT_PATH = "checkpoints/crn_best.pth"
 INFERENCE_INPUT_DIR = "inference"
-INPUT_FILENAME = "input_2.wav"
-OUTPUT_FILENAME = "output_2_denoised.wav"
+INPUT_FILENAME = "input_1.wav"
+OUTPUT_FILENAME = "output_1_denoised.wav"
+
+# Parametri Noise Gate
+NOISE_GATE_THRESHOLD = 0.03  # Soglia energetica (da tarare a orecchio: 0.01 - 0.05)
+MIN_MASK_VALUE = 0.0         # A quanto portare il silenzio (0.0 = muto assoluto)
 
 
 def load_audio(audio_path: str) -> tuple[torch.Tensor, int]:
-    """
-    Carica un file audio e lo resample a SAMPLE_RATE se necessario.
-    
-    Args:
-        audio_path: Percorso al file audio
-        
-    Returns:
-        waveform: Tensor [channels, samples]
-        sr: Sample rate del file caricato
-    """
+    """Carica, resample e normalizza l'audio."""
     waveform, sr = torchaudio.load(audio_path)
     
-    # Se il sample rate è diverso, resample
+    # Resample
     if sr != SAMPLE_RATE:
         resampler = torchaudio.transforms.Resample(sr, SAMPLE_RATE)
         waveform = resampler(waveform)
         sr = SAMPLE_RATE
     
+    # --- MODIFICA 1: NORMALIZZAZIONE INPUT ---
+    # Fondamentale affinché la soglia del Noise Gate funzioni ugualmente su tutti i file
+    max_val = waveform.abs().max()
+    if max_val > 0:
+        waveform = waveform / max_val
+        
     return waveform, sr
 
 
 def compute_stft(waveform: torch.Tensor) -> torch.Tensor:
-    """
-    Calcola la STFT complessa del segnale.
-    
-    Args:
-        waveform: [channels, samples]
-        
-    Returns:
-        stft: STFT complessa [channels, freq, time]
-    """
-    # Se mono, aggiungi dimensione di batch fittizia
+    """Calcola STFT complessa."""
     if waveform.dim() == 1:
         waveform = waveform.unsqueeze(0)
     
-    # Calcola STFT per ogni canale
     window = torch.hann_window(WIN_LENGTH, device=waveform.device)
+    
+    # Nota: Usiamo la versione vettorizzata se possibile, altrimenti loop sui canali
+    # Qui manteniamo la tua logica originale per compatibilità
     stft_list = []
     for ch in range(waveform.shape[0]):
         stft_ch = torch.stft(
@@ -73,26 +68,11 @@ def compute_stft(waveform: torch.Tensor) -> torch.Tensor:
     return torch.stack(stft_list) if len(stft_list) > 1 else stft_list[0].unsqueeze(0)
 
 
-def reconstruct_waveform(
-    magnitude: torch.Tensor, phase: torch.Tensor
-) -> torch.Tensor:
-    """
-    Ricostruisce la waveform dalla magnitude e fase usando iSTFT.
-    
-    Args:
-        magnitude: Magnitude [channels, freq, time]
-        phase: Fase [channels, freq, time]
-        
-    Returns:
-        waveform: Segnale ricostruito [channels, samples]
-    """
-    # Combina magnitude e fase per creare spettrogramma complesso
+def reconstruct_waveform(magnitude: torch.Tensor, phase: torch.Tensor) -> torch.Tensor:
+    """Ricostruisce waveform da Mag e Fase."""
     complex_spec = magnitude * torch.exp(1j * phase)
-    
-    # Crea finestra di Hann sul device corretto
     window = torch.hann_window(WIN_LENGTH, device=magnitude.device)
     
-    # Applica iSTFT per ogni canale
     num_channels = complex_spec.shape[0]
     waveforms = []
     
@@ -103,16 +83,34 @@ def reconstruct_waveform(
             hop_length=HOP_LENGTH,
             win_length=WIN_LENGTH,
             window=window,
+            center=True, # Importante: deve matchare la STFT
         )
         waveforms.append(waveform)
     
     return torch.stack(waveforms) if len(waveforms) > 1 else waveforms[0].unsqueeze(0)
 
 
-def infer():
-    """Esegue l'inference su un file audio."""
+def apply_noise_gate(magnitude_linear: torch.Tensor, threshold: float) -> torch.Tensor:
+    """
+    Applica un noise gate semplice basato sull'energia media del frame.
+    """
+    # Calcola l'energia media per ogni frame temporale (media su frequenze)
+    # magnitude_linear shape: [Batch, Freq, Time] -> Energy: [Batch, 1, Time]
+    energy = magnitude_linear.mean(dim=1, keepdim=True)
     
-    # 1. Carica il checkpoint
+    # Crea maschera binaria (1 se > soglia, 0 altrimenti)
+    mask = (energy > threshold).float()
+    
+    # Applica maschera (Opzionale: smoothing temporale sulla maschera per ridurre 'click')
+    gated_magnitude = magnitude_linear * mask
+    
+    return gated_magnitude
+
+
+def infer():
+    """Esegue l'inference."""
+    
+    # 1. Carica Checkpoint
     if not os.path.isfile(CHECKPOINT_PATH):
         print(f"❌ Checkpoint non trovato: {CHECKPOINT_PATH}")
         return
@@ -123,49 +121,55 @@ def infer():
     model.eval()
     print(f"✓ Checkpoint caricato da {CHECKPOINT_PATH}")
     
-    # 2. Carica il file audio di input
+    # 2. Carica Audio
     input_path = os.path.join(INFERENCE_INPUT_DIR, INPUT_FILENAME)
     if not os.path.isfile(input_path):
-        print(f"❌ File di input non trovato: {input_path}")
+        print(f"❌ File input mancante: {input_path}")
         return
     
     waveform, sr = load_audio(input_path)
-    print(f"✓ Audio caricato: {INPUT_FILENAME} (sample rate: {sr} Hz)")
+    print(f"✓ Audio caricato: {INPUT_FILENAME} (SR: {sr})")
     
-    # Se stereo, prendi solo il primo canale
     if waveform.shape[0] > 1:
         waveform = waveform[0:1]
-        print("  (convertito a mono)")
+        print("  (stereo -> mono)")
     
-    # 3. Calcola STFT
+    # 3. STFT
     stft = compute_stft(waveform)
     stft = stft.to(DEVICE)
     
-    # Estrai magnitude e fase
-    noisy_mag = stft.abs().contiguous()
+    noisy_mag = stft.abs()
     noisy_phase = torch.angle(stft)
     
-    print(f"✓ STFT calcolata: shape={noisy_mag.shape}")
+    # --- MODIFICA 2: COMPRESSIONE (Come nel training) ---
+    noisy_mag_compressed = torch.pow(noisy_mag, 0.5)
+    # ----------------------------------------------------
     
-    # 4. Forward pass attraverso la rete
+    print(f"✓ STFT calcolata. Input rete shape: {noisy_mag_compressed.shape}")
+    
+    # 4. Forward Pass
     with torch.no_grad():
-        enhanced_mag = model(noisy_mag)
+        enhanced_mag_compressed = model(noisy_mag_compressed)
     
-    print(f"✓ Forward pass completato")
+    # --- MODIFICA 3: DECOMPRESSIONE & CLAMP ---
+    enhanced_mag_compressed = torch.clamp(enhanced_mag_compressed, min=0.0)
+    enhanced_mag_linear = torch.pow(enhanced_mag_compressed, 2.0)
+    # ------------------------------------------
     
-    # 5. Ricostruisci il segnale audio
-    enhanced_waveform = reconstruct_waveform(enhanced_mag, noisy_phase)
+    # --- MODIFICA 4: NOISE GATE ---
+    print(f"  Applico Noise Gate (Soglia: {NOISE_GATE_THRESHOLD})...")
+    enhanced_mag_final = apply_noise_gate(enhanced_mag_linear, NOISE_GATE_THRESHOLD)
+    # ------------------------------
+
+    # 5. Ricostruzione
+    # Usiamo la magnitudo post-gate e la fase originale (rumorosa)
+    enhanced_waveform = reconstruct_waveform(enhanced_mag_final, noisy_phase)
     enhanced_waveform = enhanced_waveform.cpu()
     
-    print(f"✓ Waveform ricostruita: shape={enhanced_waveform.shape}")
-    
-    # 6. Salva l'output
+    # 6. Salvataggio
     output_path = os.path.join(INFERENCE_INPUT_DIR, OUTPUT_FILENAME)
     torchaudio.save(output_path, enhanced_waveform, SAMPLE_RATE)
     print(f"✓ Output salvato: {output_path}")
-    
-    print("\n" + "="*60)
-    print("✅ Inference completato!")
     print("="*60)
 
 

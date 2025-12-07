@@ -1,13 +1,12 @@
 from enum import Enum
-from datasets.voice_bank_demand_dataset import VoiceBankDemandDataset
-import utils.directories as dir_helper
+from src.datasets.voice_bank_demand_dataset import VoiceBankDemandDataset
+from src.utils import directories as dir_helper
 
-class NoisyDatasetPathEnum(Enum):
-    TRAIN_NOISY_DATASET_PATH = "dataset/voicebank_demand/noisy_trainset_28spk_wav"
-    TEST_NOISY_DATASET_PATH = "dataset/voicebank_demand/noisy_testset_wav"
+TRAIN_NOISY_DATASET_PATH = "dataset/voicebank_demand/noisy_trainset_28spk_wav"
+TEST_NOISY_DATASET_PATH = "dataset/voicebank_demand/noisy_testset_wav"
 
 
 class NoisyDataset(VoiceBankDemandDataset):
-    def __init__(self, dataset: NoisyDatasetPathEnum, transform):
+    def __init__(self, dataset: str, transform):
         dir_helper.ensure_dir_not_empty(dataset)
         super().__init__(dataset, transform)

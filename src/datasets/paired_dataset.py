@@ -16,6 +16,6 @@ class PairedDataset(Dataset):
         return len(self.sx_dataset)
 
     def __getitem__(self, idx):
-        noisy_waveform, noisy_stft, _ = self.sx_dataset[idx]
-        clean_waveform, clean_stft, _ = self.dx_dataset[idx]
-        return noisy_stft, clean_stft, noisy_waveform, clean_waveform
+        sx_waveform, sx_stft, _ = self.sx_dataset[idx]
+        dx_waveform, dx_stft, _ = self.dx_dataset[idx]
+        return sx_stft, dx_stft, sx_waveform, dx_waveform

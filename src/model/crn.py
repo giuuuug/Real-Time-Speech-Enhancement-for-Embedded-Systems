@@ -24,7 +24,7 @@ class CRN(nn.Module):
         # Input: [B, C, T, F]
         # Formula: output_freq = floor((input_freq - kernel_freq + 2*padding) / stride_freq) + 1
         # Esempio input: [B, 1, T, 161] 
-        self.enc1 = Encoder(1, 16)      # O_f = ((161-3)/2)+1 -> [B, 16, T, 80]
+        self.enc1 = Encoder(2, 16)      # O_f = ((161-3)/2)+1 -> [B, 16, T, 80]
         self.enc2 = Encoder(16, 32)     # O_f = ((80-3)/2)+1-> [B, 32, T, 39]
         self.enc3 = Encoder(32, 64)     # O_f = ((39-3)/2)+1-> [B, 64, T, 19]
         self.enc4 = Encoder(64, 128)    # O_f = ((19-3)/2)+1-> [B, 128, T, 9]

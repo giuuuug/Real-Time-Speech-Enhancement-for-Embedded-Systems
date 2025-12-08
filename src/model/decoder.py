@@ -8,7 +8,7 @@ class Decoder(nn.Module):
         self,
         in_channels,
         out_channels,
-        kernel_size=(2, 3),
+        kernel_size=(1, 3),
         stride=(1, 2),
         output_padding=(0, 0),
         is_last=False,
@@ -23,7 +23,7 @@ class Decoder(nn.Module):
             output_padding=output_padding,
         )
         self.bn = nn.BatchNorm2d(out_channels)
-        self.activation = nn.ELU() if not is_last else nn.Softplus()
+        self.activation = nn.ELU() if not is_last else nn.Identity()
 
     def forward(self, x: torch.Tensor, target_time=None) -> torch.Tensor:
         """

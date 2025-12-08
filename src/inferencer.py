@@ -15,7 +15,7 @@ WIN_LENGTH = 320
 SAMPLE_RATE = 16000
 DEVICE = get_torch_device()
 
-CHECKPOINT_PATH = "checkpoints/crn_best.pth"
+CHECKPOINT_PATH = "checkpoints/crn_best_3.pth"
 INFERENCE_INPUT_DIR = "inference"
 INPUT_FILENAME = "input_1.wav"
 OUTPUT_FILENAME = "output_1_denoised.wav"
